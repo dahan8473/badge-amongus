@@ -56,14 +56,6 @@ function bit_set(mask, i)
   return mask
 end
 
-function pad_name(s)
-  s = tostring(s or "GOOSE")
-  if #s > 12 then s = string.sub(s, 1, 12) end
-  return s .. string.rep(" ", 12 - #s)
-end
-
-function trim(s) return (string.gsub(s, "%s+$", "")) end
-
 -- ------------------------------------------------------------- protocol
 
 function frame(t, ...)
@@ -84,7 +76,7 @@ end
 -- field layouts per frame type: { name, byte } or { name, from, to }
 local LAYOUT = {
   L = { { "count", 5 } },
-  J = { { "nonce", 5 }, { "name", 6, 44 } },
+  J = { { "nonce", 5 } },
   K = { { "tmac", 5, 21 }, { "pid", 22 } },
   O = { { "tmac", 5, 21 }, { "xrole", 22 } },
   G = { { "seed", 5, -6 }, { "n_imp", 7 } },
@@ -98,7 +90,6 @@ local LAYOUT = {
   P = { { "reporter", 5 }, { "victim", 6 } },
   M = { { "mseq", 5 }, { "caller", 6 }, { "reason", 7 } },
   V = { { "mseq", 5 }, { "voter", 6 }, { "target", 7 } },
-  R = { { "pid", 5 }, { "name", 6, 44 } },
 }
 
 -- parse one frame into a table, nil when malformed
@@ -116,11 +107,6 @@ function parse(mac, rssi, p)
     elseif d[3] < 0 then -- two bytes, big endian
       if #p < -d[3] then return nil end
       f[d[1]] = string.byte(p, d[2]) * 256 + string.byte(p, -d[3])
-    elseif d[3] > 44 then -- unreachable, kept for clarity
-      return nil
-    elseif d[1] == "name" then -- rest of frame, trimmed
-      if #p < d[2] then return nil end
-      f[d[1]] = trim(string.sub(p, d[2]))
     else -- fixed range (mac string)
       if #p < d[3] then return nil end
       f[d[1]] = string.sub(p, d[2], d[3])

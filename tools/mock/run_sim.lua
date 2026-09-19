@@ -47,14 +47,16 @@ check(p4.env._DBG.pid ~= 0, "DANA joined (pid " .. p4.env._DBG.pid .. ")")
 
 print("== start ==")
 W:press(ship, "START")
--- wait until every badge has its role screen up (seed frames repeat)
+-- wait until every badge is seeded AND the impostor role frame landed
+-- (both repeat from the host every 3s, losses recover)
 for _ = 1, 40 do
   W:run(500)
-  local all = true
+  local all, imps = true, 0
   for _, p in ipairs({ p1, p2, p3, p4 }) do
     if not p.env._DBG.me.seeded then all = false end
+    if p.env._DBG.role == 2 then imps = imps + 1 end
   end
-  if all then break end
+  if all and imps == 1 then break end
 end
 
 local imp, crew = nil, {}
@@ -82,7 +84,11 @@ else
     tries = tries + 1
   end
 end
-W:run(6000) -- beacons at 1Hz and state at 0.5Hz both survive losses given time
+-- beacons at 1Hz and state at 0.5Hz both survive losses given time
+for _ = 1, 20 do
+  W:run(500)
+  if p1.env._DBG.gv.task_pct > 0 then break end
+end
 check(worker.env._DBG.me.tasks_done == 1, worker.name .. " finished a task")
 check(p1.env._DBG.gv.task_pct > 0, "ship task percent went up (" ..
   p1.env._DBG.gv.task_pct .. "%)")

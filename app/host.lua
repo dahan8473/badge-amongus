@@ -5,8 +5,7 @@
 local M = {}
 
 local host = { players = {}, count = 0, phase_until = 0, votes = {},
-               last_state_ms = 0, last_roster_ms = 0, roster_next = 1,
-               n_imp = 1, seed = 0, last_role_ms = 0 }
+               last_state_ms = 0, n_imp = 1, seed = 0, last_role_ms = 0 }
 
 local function alive_mask()
   local m = 0
@@ -114,8 +113,7 @@ local function show_lobby()
   screen = "lobby"
   clear_screen()
   lbl("SHIP (HOST)", "center", 0, -80, "large")
-  ui.count = lbl("players: 0", "center", 0, -40)
-  ui.names = lbl("", "center", 0, 5)
+  ui.count = lbl("players: 0", "center", 0, -20)
   lbl("START begins the game (min " .. MIN_PLAYERS .. ")",
     "center", 0, 75, "small", COL_DIM)
 end
@@ -159,7 +157,7 @@ function M.handle(f)
     end
     if host.count >= MAX_PLAYERS then return end
     local pid = host.count + 1
-    host.players[pid] = { mac = f.mac, nonce = f.nonce, name = f.name,
+    host.players[pid] = { mac = f.mac, nonce = f.nonce,
       role = 0, alive = false, tasks = 0, last_seen = now() }
     host.count = host.count + 1
     send(frame("K", f.mac, pid))
@@ -205,13 +203,7 @@ function M.tick()
       end
       host.last_state_ms = t
     end
-    if ui.count then
-      ui.count:set_text("players: " .. host.count)
-      local names = {}
-      for _, pl in pairs(host.players) do names[#names + 1] = pl.name end
-      table.sort(names)
-      ui.names:set_text(table.concat(names, "  "))
-    end
+    if ui.count then ui.count:set_text("players: " .. host.count) end
   else
     if t - host.last_state_ms > 2000 then send_state() end
     -- repeat role + seed frames so a lost packet can't strand a player
@@ -234,19 +226,6 @@ function M.tick()
       if all_in or t > host.phase_until then tally() end
     elseif gv.phase == PH_PLAY and ui.status then
       ui.status:set_text("ship " .. task_pct() .. "%   alive " .. alive_count())
-    end
-  end
-  -- roster rebroadcast, one name per second
-  if t - host.last_roster_ms > 1000 and host.count > 0 then
-    host.last_roster_ms = t
-    local pid = host.roster_next
-    for _ = 1, MAX_PLAYERS do
-      pid = pid % MAX_PLAYERS + 1
-      if host.players[pid] then break end
-    end
-    host.roster_next = pid
-    if host.players[pid] then
-      send(frame("R", pid, pad_name(host.players[pid].name)))
     end
   end
   _DBG.phase = gv.phase
