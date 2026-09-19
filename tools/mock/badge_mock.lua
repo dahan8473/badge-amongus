@@ -175,6 +175,20 @@ function World:spawn(name, x, y)
   -- each instance runs the app in its own environment
   local env = setmetatable({ badge = badge }, { __index = _G })
   env._ENV_NAME = name
+  -- the badge's require maps "mod" to <appdir>/mod.lua in the same env
+  local app_dir = string.match(M.app_path, "(.*)/") or "."
+  local mod_cache = {}
+  env.require = function(modname)
+    if mod_cache[modname] == nil then
+      local path = app_dir .. "/" .. string.gsub(modname, "%.", "/") .. ".lua"
+      local mf = assert(io.open(path, "r"))
+      local msrc = mf:read("*a")
+      mf:close()
+      local mchunk = assert(load(msrc, "@" .. modname .. "[" .. name .. "]", "t", env))
+      mod_cache[modname] = mchunk()
+    end
+    return mod_cache[modname]
+  end
   local f = assert(io.open(M.app_path, "r"))
   local src = f:read("*a")
   f:close()
