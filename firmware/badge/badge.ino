@@ -7,31 +7,31 @@
 // Libraries: GFX Library for Arduino, Adafruit NeoPixel.
 
 #include <WiFi.h>
-#include <Wire.h>
 #include <Arduino_GFX_Library.h>
 #include <Adafruit_NeoPixel.h>
 
-// ==================== PIN MAP (from firmware RE) ====================
-// TODO: fill these from the disassembly report, then flash.
-#define PIN_LCD_SCLK  -1
-#define PIN_LCD_MOSI  -1
-#define PIN_LCD_CS    -1
-#define PIN_LCD_DC    -1
-#define PIN_LCD_RST   -1
-#define PIN_LCD_BL    -1
+// ==================== PIN MAP (recovered from stock firmware) ====================
+#define PIN_LCD_SCLK  1
+#define PIN_LCD_MOSI  10
+#define PIN_LCD_CS    2
+#define PIN_LCD_DC    0
+#define PIN_LCD_RST   4
+#define PIN_LCD_BL    -1   // backlight hardwired on, no GPIO
 
-#define PIN_I2C_SDA   -1
-#define PIN_I2C_SCL   -1
-#define BTN_EXP_ADDR  0x00   // 7-bit I2C address of the button expander
-
-#define PIN_LED       -1
+#define PIN_LED       3
 #define NUM_LEDS      6
 
-// button bit positions within the expander's input register(s).
-// index order: A B UP DOWN LEFT RIGHT HOME START. -1 = unknown yet.
+// Buttons: 7 face buttons on a 74HC165 shift register, START direct on GPIO9.
+#define PIN_165_DATA  7    // QH serial out
+#define PIN_165_LATCH 20   // SH/LD, idles high; pulse low to load
+#define PIN_165_CLK   21   // CLK, idles low; pulse high to shift
+#define PIN_START_BTN 9    // direct (also BOOT strap), active-low
+
 enum { KA, KB, KUP, KDOWN, KLEFT, KRIGHT, KHOME, KSTART, KN };
-int btnBit[KN] = { -1, -1, -1, -1, -1, -1, -1, -1 };
-bool btnActiveLow = true;  // most expanders read pressed = 0
+// which 74HC165 stage (0-7) each face button sits on. Calibrated on
+// hardware; DEBUG_BTN prints raw stages so we can fill these in.
+int stageOf[KN] = { -1, -1, -1, -1, -1, -1, -1, /*START is direct*/ -1 };
+#define DEBUG_BTN 1  // 1 = print raw shift-register byte over serial on change
 
 // ==================== config ====================
 #define WIFI_SSID "amongus"
@@ -135,28 +135,46 @@ void pumpNet() {
   }
 }
 
-// ==================== buttons (I2C expander) ====================
-// reads the expander's input register(s) and returns a bitmask indexed
-// by the K* enum. Concrete register/read pattern goes in once the chip
-// is known from the RE report.
-uint16_t readExpander() {
-  if (BTN_EXP_ADDR == 0) return 0;
-  Wire.requestFrom(BTN_EXP_ADDR, (uint8_t)2);
-  uint16_t raw = 0; int i = 0;
-  while (Wire.available() && i < 2) raw |= (Wire.read() << (8 * i++));
-  uint16_t mask = 0;
-  for (int k = 0; k < KN; k++) {
-    if (btnBit[k] < 0) continue;
-    bool bitset = (raw >> btnBit[k]) & 1;
-    bool pressed = btnActiveLow ? !bitset : bitset;
-    if (pressed) mask |= (1 << k);
+// ==================== buttons (74HC165 shift register + direct START) ====================
+// returns 8 raw stages as a byte, bit i = stage i, already inverted so
+// 1 = pressed (the register lines are active-low).
+uint8_t readShift() {
+  digitalWrite(PIN_165_LATCH, LOW);   // load parallel inputs
+  delayMicroseconds(5);
+  digitalWrite(PIN_165_LATCH, HIGH);  // back to shift mode
+  uint8_t v = 0;
+  for (int i = 0; i < 8; i++) {
+    if (digitalRead(PIN_165_DATA)) v |= (1 << i);
+    digitalWrite(PIN_165_CLK, HIGH);
+    delayMicroseconds(5);
+    digitalWrite(PIN_165_CLK, LOW);
   }
+  return ~v; // active-low -> 1 means pressed
+}
+
+uint16_t readButtons() {
+  uint8_t raw = readShift();
+  uint16_t mask = 0;
+  for (int k = 0; k < KN; k++)
+    if (stageOf[k] >= 0 && (raw & (1 << stageOf[k]))) mask |= (1 << k);
+  if (digitalRead(PIN_START_BTN) == LOW) mask |= (1 << KSTART);
   return mask;
 }
 
 void onPress(int k);
+uint8_t rawPrev = 0;
 void pumpButtons() {
-  uint16_t now = readExpander();
+  if (DEBUG_BTN) {
+    uint8_t raw = readShift();
+    if (raw != rawPrev) {
+      Serial.printf("shift stages pressed:");
+      for (int i = 0; i < 8; i++) if (raw & (1 << i)) Serial.printf(" %d", i);
+      if (digitalRead(PIN_START_BTN) == LOW) Serial.printf(" START(gpio9)");
+      Serial.println();
+      rawPrev = raw;
+    }
+  }
+  uint16_t now = readButtons();
   for (int k = 0; k < KN; k++)
     if ((now & (1 << k)) && !(btnPrev & (1 << k))) onPress(k);
   btnPrev = now;
@@ -258,7 +276,10 @@ void setup() {
     gfx->begin(40000000);
     gfx->fillScreen(BLACK);
   }
-  if (PIN_I2C_SDA >= 0) Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL);
+  pinMode(PIN_165_LATCH, OUTPUT); digitalWrite(PIN_165_LATCH, HIGH);
+  pinMode(PIN_165_CLK, OUTPUT); digitalWrite(PIN_165_CLK, LOW);
+  pinMode(PIN_165_DATA, INPUT);
+  pinMode(PIN_START_BTN, INPUT_PULLUP);
   if (PIN_LED >= 0) { leds.setPin(PIN_LED); leds.begin(); leds.show(); }
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASS);
@@ -267,5 +288,14 @@ void loop() {
   pumpNet();
   if (millis() - lastBtn > 30) { lastBtn = millis(); pumpButtons(); }
   if (millis() - lastDraw > 250) { lastDraw = millis(); draw(); drawLeds(); }
+#if DEBUG_BTN
+  static unsigned long hb = 0;
+  if (millis() - hb > 700) {
+    hb = millis();
+    Serial.printf("alive t=%lus wifi=%d raw165=0x%02X start=%d\n",
+                  millis() / 1000, WiFi.status() == WL_CONNECTED,
+                  (uint8_t)~readShift() & 0xFF, digitalRead(PIN_START_BTN));
+  }
+#endif
   delay(2);
 }
