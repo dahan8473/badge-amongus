@@ -167,35 +167,43 @@ end
 
 -- ------------------------------------------------------------- lifecycle
 
-local radio_ok = false
+local pending_mode = nil
+
+local function show_confirm(which)
+  pending_mode = which
+  screen = "confirm"
+  clear_screen()
+  lbl("START BLUETOOTH?", "center", 0, -60, "large")
+  lbl("On old badge firmware this can", "center", 0, -15, "small")
+  lbl("reboot the badge. The help desk", "center", 0, 5, "small")
+  lbl("has the firmware update.", "center", 0, 25, "small")
+  lbl("A: go   B: back", "center", 0, 70, "small", COL_DIM)
+end
 
 local function start_mode(which)
-  if not radio_ok then return end
+  local m = require(which) -- compiles just that half, on demand
   collectgarbage("collect")
+  if not badge.radio.enable() then
+    clear_screen()
+    lbl("Bluetooth could not start.", "center", 0, -20)
+    lbl("Reboot the badge and retry.", "center", 0, 10)
+    return
+  end
+  my_mac = badge.radio.mac()
+  badge.radio.on_recv(function(mac, rssi, payload)
+    if #inbox < 24 then inbox[#inbox + 1] = { mac, rssi, payload } end
+  end)
   mode = which
-  ACTIVE = require(which) -- compiles just that half, on demand
+  ACTIVE = m
   ACTIVE.start()
 end
 
 function on_enter(root)
   root_scr = root
-  -- Bluetooth first, before any UI or module compiles: the BLE stack
-  -- needs a big block of RAM and app entry is when memory is freshest
-  radio_ok = badge.radio.enable()
   local bg = badge.ui.box(root, 320, 240)
   bg:align("center", 0, 0)
   bg:style({ bg_color = COL_BG, border_width = 0 })
-  if radio_ok then
-    my_mac = badge.radio.mac()
-    badge.radio.on_recv(function(mac, rssi, payload)
-      if #inbox < 24 then inbox[#inbox + 1] = { mac, rssi, payload } end
-    end)
-    show_menu()
-  else
-    lbl("Bluetooth could not start.", "center", 0, -20)
-    lbl("Reboot the badge, then open", "center", 0, 10)
-    lbl("this app again first thing.", "center", 0, 35)
-  end
+  show_menu()
 end
 
 function on_tick()
@@ -210,12 +218,15 @@ end
 
 function on_button(b, kind)
   if kind ~= badge.input.KIND.PRESSED then return end
+  local BT = badge.input.BUTTON
   if ACTIVE then
     ACTIVE.button(b)
   elseif screen == "menu" then
-    local BT = badge.input.BUTTON
-    if b == BT.A then start_mode("player")
-    elseif b == BT.START then start_mode("host") end
+    if b == BT.A then show_confirm("player")
+    elseif b == BT.START then show_confirm("host") end
+  elseif screen == "confirm" then
+    if b == BT.A then start_mode(pending_mode)
+    elseif b == BT.B then show_menu() end
   end
 end
 

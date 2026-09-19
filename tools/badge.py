@@ -72,15 +72,41 @@ def run_cmd(ser, command, timeout=5.0):
     return out.decode(errors="replace")
 
 
-def put_file(ser, remote, data):
+def resync(ser, pending):
+    # a failed transfer can leave the badge blocked reading file bytes;
+    # feed it the most it could still want, then find the prompt again
+    if pending:
+        for i in range(0, pending, WRITE_CHUNK):
+            ser.write(bytes(min(WRITE_CHUNK, pending - i)))
+            time.sleep(WRITE_PAUSE)
     ser.reset_input_buffer()
-    send_line(ser, f"put {remote} {len(data)}")
-    wait_for(ser, b"READY", 5.0)
-    for i in range(0, len(data), WRITE_CHUNK):
-        ser.write(data[i : i + WRITE_CHUNK])
-        if i + WRITE_CHUNK < len(data):
-            time.sleep(WRITE_PAUSE)  # badge RX ring is 256B; don't overflow it
-    wait_for(ser, b"OK %d" % len(data), 20.0)
+    for _ in range(3):
+        send_line(ser, "")
+        try:
+            wait_for(ser, PROMPT, 2.0)
+            return True
+        except TimeoutError:
+            pass
+    return False
+
+
+def put_file(ser, remote, data):
+    for attempt in range(3):
+        try:
+            ser.reset_input_buffer()
+            send_line(ser, f"put {remote} {len(data)}")
+            wait_for(ser, b"READY", 5.0)
+            for i in range(0, len(data), WRITE_CHUNK):
+                ser.write(data[i : i + WRITE_CHUNK])
+                if i + WRITE_CHUNK < len(data):
+                    time.sleep(WRITE_PAUSE)  # badge RX ring is 256B
+            wait_for(ser, b"OK %d" % len(data), 20.0)
+            return
+        except TimeoutError:
+            print(f"\n[push] {remote} stalled, resyncing (try {attempt + 1}/3)...")
+            if not resync(ser, len(data)):
+                raise
+    raise TimeoutError(f"gave up on {remote} after 3 tries")
 
 
 def push(app_dir):

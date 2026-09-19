@@ -29,11 +29,10 @@ local p4 = W:spawn("DANA", -6, 0)
 W:enter_all()
 
 print("== lobby ==")
-W:press(ship, "START") -- ship hosts
-W:press(p1, "A") -- players join
-W:press(p2, "A")
-W:press(p3, "A")
-W:press(p4, "A")
+W:press(ship, "START") W:press(ship, "A") -- ship hosts (A confirms radio)
+for _, p in ipairs({ p1, p2, p3, p4 }) do -- players join, confirming radio
+  W:press(p, "A") W:press(p, "A")
+end
 -- the host sees the player count on the ship screen and waits for
 -- everyone, so the sim does too (up to 30s)
 for _ = 1, 60 do
