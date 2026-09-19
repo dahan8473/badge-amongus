@@ -168,7 +168,13 @@ void pumpNet() {
   if (!sock.connected() && WiFi.status() == WL_CONNECTED
       && millis() - lastHello > 3000) {
     lastHello = millis();
-    if (sock.connect(SERVER_IP, SERVER_PORT)) sendHello();
+    // try the configured address, then the gateway: when the laptop runs
+    // the hotspot, the laptop IS the gateway, so no config is needed
+    static bool tryGateway = false;
+    bool ok = tryGateway ? sock.connect(WiFi.gatewayIP(), SERVER_PORT)
+                         : sock.connect(SERVER_IP, SERVER_PORT);
+    tryGateway = !tryGateway;
+    if (ok) sendHello();
   }
 }
 
