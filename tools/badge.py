@@ -90,18 +90,31 @@ def resync(ser, pending):
     return False
 
 
+def read_back(ser, remote):
+    out = run_cmd(ser, f"cat {remote}", timeout=30.0)
+    body = out.split("\n", 1)[1].rsplit("badge>", 1)[0]
+    return body.replace("\r\n", "\n").replace("\r", "\n").strip("\n")
+
+
 def put_file(ser, remote, data):
+    # a stalled transfer can leave a file that is the right SIZE but padded
+    # with garbage (resync feeds filler bytes), so size is not proof:
+    # verify contents by reading the file back after every upload
     for attempt in range(3):
+        chunk = WRITE_CHUNK if attempt == 0 else 64  # retries go gentler
+        pause = WRITE_PAUSE if attempt == 0 else 0.04
         try:
             ser.reset_input_buffer()
             send_line(ser, f"put {remote} {len(data)}")
             wait_for(ser, b"READY", 5.0)
-            for i in range(0, len(data), WRITE_CHUNK):
-                ser.write(data[i : i + WRITE_CHUNK])
-                if i + WRITE_CHUNK < len(data):
-                    time.sleep(WRITE_PAUSE)  # badge RX ring is 256B
-            wait_for(ser, b"OK %d" % len(data), 20.0)
-            return
+            for i in range(0, len(data), chunk):
+                ser.write(data[i : i + chunk])
+                if i + chunk < len(data):
+                    time.sleep(pause)  # badge RX ring is 256B
+            wait_for(ser, b"OK %d" % len(data), 30.0)
+            if read_back(ser, remote) == data.decode(errors="replace").strip("\n"):
+                return
+            print(f"\n[push] {remote} verify mismatch, retrying...")
         except TimeoutError:
             print(f"\n[push] {remote} stalled, resyncing (try {attempt + 1}/3)...")
             if not resync(ser, len(data)):
