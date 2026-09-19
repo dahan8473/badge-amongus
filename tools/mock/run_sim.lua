@@ -1,4 +1,4 @@
--- Plays a full game of Among Geese on the laptop: 1 host + 3 players,
+-- Plays a full game of Among Us on the laptop: 1 host + 3 players,
 -- with simulated radio, distance-based signal strength, and 15% packet loss.
 -- Run from the repo root:  lua tools/mock/run_sim.lua
 --

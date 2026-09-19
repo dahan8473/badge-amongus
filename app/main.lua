@@ -1,4 +1,4 @@
--- Among Geese: social deduction for the HTN 2026 badge.
+-- Among Us: social deduction for the HTN 2026 badge.
 -- One app, two modes: Host (the "ship", runs the game) or Player.
 -- Radio frames are 44 bytes max. The host rebroadcasts full game state
 -- every 2s, so lost frames never desync anyone.
@@ -200,7 +200,7 @@ local ui = {}
 local function show_menu()
   screen = "menu"
   clear_screen()
-  lbl("AMONG GEESE", "center", 0, -60, "large")
+  lbl("AMONG US", "center", 0, -60, "large")
   lbl("A: join a game", "center", 0, -10)
   lbl("START: host a game (ship)", "center", 0, 20)
   lbl("HOME: quit", "center", 0, 70, "small", COL_DIM)

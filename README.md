@@ -1,4 +1,4 @@
-# Among Geese
+# Among Us
 
 Among Us, played in real life on Hack the North 2026 badges.
 

@@ -127,8 +127,8 @@ function World:spawn(name, x, y)
       get = function() return nil end,
     },
     app = {
-      slug = function() return "amonggeese" end,
-      name = function() return "Among Geese" end,
+      slug = function() return "amongus" end,
+      name = function() return "Among Us" end,
       exit = function() end,
     },
     fs = {
