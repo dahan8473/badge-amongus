@@ -29,9 +29,9 @@
 
 enum { KA, KB, KUP, KDOWN, KLEFT, KRIGHT, KHOME, KSTART, KN };
 // which 74HC165 stage (0-7) each face button sits on. Calibrated on
-// hardware; DEBUG_BTN prints raw stages so we can fill these in.
-int stageOf[KN] = { -1, -1, -1, -1, -1, -1, -1, /*START is direct*/ -1 };
-#define DEBUG_BTN 1  // 1 = print raw shift-register byte over serial on change
+// hardware. START is the direct GPIO9 pin, not a shift-register stage.
+int stageOf[KN] = { 0, 1, 6, 3, 4, 5, 2, /*START direct*/ -1 };
+#define DEBUG_BTN 0  // 1 = print raw shift-register byte over serial
 
 // ==================== config ====================
 #define WIFI_SSID "amongus"
